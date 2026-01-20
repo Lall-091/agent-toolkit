@@ -1,6 +1,5 @@
 ---
 description: Best practices for building a Stripe integrations
-alwaysApply: false
 ---
 
 When designing an integration, always prefer the documentation in [Stripe's Integration Options doc](https://docs.stripe.com/payments/payment-methods/integration-options.md)

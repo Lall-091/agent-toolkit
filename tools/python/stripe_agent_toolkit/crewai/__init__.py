@@ -1,4 +1,4 @@
-"""Stripe Agent Toolkit for Strands."""
+"""Stripe Agent Toolkit for CrewAI."""
 
 from .toolkit import StripeAgentToolkit, create_stripe_agent_toolkit
 

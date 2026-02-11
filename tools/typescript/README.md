@@ -17,7 +17,7 @@ npm install @stripe/agent-toolkit
 
 ## Usage
 
-The library needs to be configured with your account's secret key which is available in your [Stripe Dashboard][api-keys]. We recommend using a [Restricted API Key][restricted-keys] (`rk_*`) for better security—tool availability is determined by the permissions you configure on the key.
+The library needs to be configured with your account's secret key which is available in your [Stripe Dashboard][api-keys]. We strongly recommend using a [Restricted API Key][restricted-keys] (`rk_*`) for better security and granular permissions. Tool availability is determined by the permissions you configure on the restricted key.
 
 ```typescript
 import {StripeAgentToolkit} from '@stripe/agent-toolkit/langchain';

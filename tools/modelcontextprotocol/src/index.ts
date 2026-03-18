@@ -9,10 +9,9 @@ import {
   validateStripeAccount,
   buildHeaders,
 } from './cli';
+import {extractClientName, buildUserAgent} from './userAgent';
 
 const MCP_SERVER_URL = 'https://mcp.stripe.com';
-const VERSION = '0.3.1';
-const USER_AGENT = `stripe-mcp-local/${VERSION}`;
 
 function handleError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -29,32 +28,61 @@ export async function main(): Promise<void> {
     validateStripeAccount(options.stripeAccount);
   }
 
-  const headers = buildHeaders(options, USER_AGENT);
-
-  // Create stdio transport (listens for messages from Claude Desktop)
+  // Create stdio transport (listens for messages from MCP clients)
   const stdioTransport = new StdioServerTransport();
 
-  // Create HTTP transport (connects to remote MCP server)
-  const httpTransport = new StreamableHTTPClientTransport(
-    new URL(MCP_SERVER_URL),
-    {requestInit: {headers}}
-  );
+  let httpTransport: StreamableHTTPClientTransport | null = null;
+
+  function createHttpTransport(
+    userAgent: string
+  ): StreamableHTTPClientTransport {
+    const headers = buildHeaders(options, userAgent);
+    const transport = new StreamableHTTPClientTransport(
+      new URL(MCP_SERVER_URL),
+      {requestInit: {headers}}
+    );
+
+    // Wire up message forwarding: HTTP -> stdio
+    transport.onmessage = async (message) => {
+      try {
+        await stdioTransport.send(message);
+      } catch (error) {
+        console.error(red('Error forwarding message to client:'), error);
+      }
+    };
+
+    transport.onerror = (error) => {
+      console.error(red('HTTP transport error:'), error);
+    };
+
+    transport.onclose = () => {
+      stdioTransport.close();
+    };
+
+    return transport;
+  }
 
   // Wire up message forwarding: stdio -> HTTP
+  // The first message is inspected for clientInfo to build the User-Agent.
+  let initialized = false;
+
   stdioTransport.onmessage = async (message) => {
     try {
-      await httpTransport.send(message);
+      if (!initialized) {
+        initialized = true;
+
+        // Extract client name from the initialize request (if present)
+        const clientName = extractClientName(message);
+        const userAgent = buildUserAgent(clientName);
+
+        // Create and start the HTTP transport with the enriched User-Agent
+        httpTransport = createHttpTransport(userAgent);
+        await httpTransport.start();
+      }
+
+      await httpTransport!.send(message);
     } catch (error) {
       console.error(red('Error forwarding message to server:'), error);
-    }
-  };
-
-  // Wire up message forwarding: HTTP -> stdio
-  httpTransport.onmessage = async (message) => {
-    try {
-      await stdioTransport.send(message);
-    } catch (error) {
-      console.error(red('Error forwarding message to client:'), error);
     }
   };
 
@@ -63,21 +91,12 @@ export async function main(): Promise<void> {
     console.error(red('Stdio transport error:'), error);
   };
 
-  httpTransport.onerror = (error) => {
-    console.error(red('HTTP transport error:'), error);
-  };
-
-  // Handle transport close - just close the other transport
+  // Handle transport close
   stdioTransport.onclose = () => {
-    httpTransport.close();
+    httpTransport?.close();
   };
 
-  httpTransport.onclose = () => {
-    stdioTransport.close();
-  };
-
-  // Start both transports
-  await httpTransport.start();
+  // Start stdio transport (HTTP transport starts on first message)
   await stdioTransport.start();
 
   // Log success to stderr (stdout is reserved for MCP messages)
